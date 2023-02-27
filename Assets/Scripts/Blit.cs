@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using UnityEditor;
 using UnityEngine;
 
 public class Blit : MonoBehaviour
@@ -9,7 +10,8 @@ public class Blit : MonoBehaviour
     public Mesh_TerrainSettings mesh_set;
     public int treeSizeLim;
     public int meshSizeLim;
-    const int lod = 0;
+    const int lod = 10;
+    private ComputeBuffer debug;
     private ComputeBuffer treeMem;
     private ComputeBuffer meshMem;
     private ComputeBuffer treeMemFree;
@@ -38,10 +40,13 @@ public class Blit : MonoBehaviour
         treeMemFree = new ComputeBuffer(treeSizeLim, sizeof(int), ComputeBufferType.Append);
         meshMemFree = new ComputeBuffer(meshSizeLim, sizeof(int),ComputeBufferType.Append);
         count = new ComputeBuffer(1, sizeof(int));
+        debug = new ComputeBuffer(4, sizeof(int));
+
         treeMemFree.SetData(genData(1,treeSizeLim-1,8));
         meshMemFree.SetData(genData(0,meshSizeLim - 1, 1));
         treeMemFree.SetCounterValue((uint)(treeSizeLim - 2)/8+1);
-        TreeNode initNode = new TreeNode(1,lod,0,0,0,100);
+        meshMemFree.SetCounterValue((uint)meshSizeLim);
+        TreeNode initNode = new TreeNode(1,lod,0,0,0,5000);
         treeMem.SetData(new TreeNode[] { initNode } ,0,0,1);
 
         shader.SetBuffer(kernelHandle[0], "treemem", treeMem);
@@ -52,6 +57,10 @@ public class Blit : MonoBehaviour
         shader.SetBuffer(kernelHandle[2], "meshmem", meshMem);
         shader.SetBuffer(kernelHandle[0], "treememFree", treeMemFree);
         shader.SetBuffer(kernelHandle[0], "meshmemFree", meshMemFree);
+
+        shader.SetBuffer(kernelHandle[0], "debug", debug);
+        shader.SetBuffer(kernelHandle[1], "debug", debug);
+        shader.SetBuffer(kernelHandle[2], "debug", debug);
     }
 
     void OnRenderImage(RenderTexture src, RenderTexture dest)
@@ -76,11 +85,16 @@ public class Blit : MonoBehaviour
         shader.SetVector("camPos", cam.transform.position);
         shader.Dispatch(kernelHandle[0], treeSizeLim / 256, 1, 1);
         buf.Dispose();
-        ComputeBuffer.CopyCount(treeMemFree, count, 0);
+
         int[] countArr = new int[1];
+        ComputeBuffer.CopyCount(treeMemFree, count, 0);
         count.GetData(countArr);
-        print(treeSizeLim-8*countArr[0]);
-        for(int lvl = lod; lvl>0; lvl--)
+        print("tree used: "+(treeSizeLim-8*countArr[0]));
+        ComputeBuffer.CopyCount(meshMemFree, count, 0);
+        count.GetData(countArr);
+        print("mesh used: " + (meshSizeLim - countArr[0]));
+
+        for (int lvl = lod; lvl>0; lvl--)
         {
             shader.SetInt("lvlProcess", lvl);
             shader.Dispatch(kernelHandle[1], treeSizeLim / 256, 1, 1);
@@ -89,7 +103,22 @@ public class Blit : MonoBehaviour
         shader.SetTexture(kernelHandle[2], "Result", tex);
         shader.SetInts("resSize", new int[] { tex.width, tex.height });
         shader.Dispatch(kernelHandle[2], tex.width / 16, tex.height / 16, 1);
+
+        int[] debugArr = new int[4];
+        debug.GetData(debugArr);
+        Debug.Log(string.Join(", ", debugArr));
+
         Graphics.Blit(tex, null as RenderTexture);
+    }
+
+    private void OnApplicationQuit()
+    {
+        print("quit");
+        treeMem.Dispose();
+        meshMem.Dispose();
+        treeMemFree.Dispose();
+        meshMemFree.Dispose();
+        count.Dispose();
     }
 
     private Matrix4x4 GetFrustumCorners(Camera cam)

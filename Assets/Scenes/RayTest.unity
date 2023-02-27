@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.3731193, g: 0.38073996, b: 0.35872698, a: 1}
+  m_IndirectSpecularColor: {r: 0.3731193, g: 0.38073996, b: 0.3587269, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -201,8 +201,8 @@ Transform:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 462317096}
-  m_LocalRotation: {x: 0.67799926, y: 0.3575905, z: -0.06861367, w: 0.6385439}
-  m_LocalPosition: {x: 3.2548802, y: 232.41745, z: 68.83299}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 1, y: 550, z: 1}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
@@ -222,8 +222,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   shader: {fileID: 7200000, guid: 78bedb0a671e04414afa9ea9f2fc4eb0, type: 3}
   mesh_set: {fileID: 11400000, guid: 7fe016d8f7a0b4a8ebc301cf6f3c830e, type: 2}
-  treeSizeLim: 100000
-  meshSizeLim: 10000
+  treeSizeLim: 500000
+  meshSizeLim: 500000
 --- !u!114 &462317101
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -236,6 +236,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2a51dbe232a7f4966a6ddb8f4eaac8e3, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  maxSpeed: 100
-  acceleration: 2
-  rotationSpeed: 40
+  maxSpeed: 10
+  acceleration: 0.2
+  rotationSpeed: 120

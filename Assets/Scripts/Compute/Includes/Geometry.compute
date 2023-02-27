@@ -17,7 +17,11 @@ void IntersectPlane(float3 orig, float3 dir, float3x3 tri, inout float3 outX, in
 {
     float3 N = normalize(cross(tri[1]-tri[0], tri[2]-tri[0]));
     outX = orig + dir * dot(tri[0] - orig, N) / dot(dir, N);
-    outN = N;
+    if(dot(N,dir)>0){
+        outN = -N;
+    }else{
+        outN = N;
+    }
 }
 
 bool IntersectTriangle(float3 orig, float3 dir, float3x3 tri, inout float3 outX, inout float3 outN)

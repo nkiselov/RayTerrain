@@ -29,6 +29,7 @@ struct MeshNode{
     int tcount;
 };
 
+RWStructuredBuffer<int> debug;
 RWStructuredBuffer<TreeNode> treemem;
 RWStructuredBuffer<MeshNode> meshmem;
 ConsumeStructuredBuffer<int> treememFree;
@@ -42,16 +43,16 @@ float boxSDF(float3 p, float3 center, float size){
 float isoLevel;
 float3 interpolateVerts(float4 v1, float4 v2) {
     float t = (isoLevel - v1.w) / (v2.w - v1.w);
-    return v1.xyz + 0.5 * (v2.xyz-v1.xyz);
+    return v1.xyz + t * (v2.xyz-v1.xyz);
 }
 
-int p2c[8] = {0,1,4,5,3,2,7,6};
+static const int p2c[8] = {0,1,4,5,3,2,7,6};
 void genMesh(float3 center, float size, int to){
     float4 cubeCorners[8];
     for(int c=0; c<8; c++){
         float3 ps = float3(c%2,(c/2)%2,(c/4)%2);
         float3 p = center+size*(ps-float3(0.5,0.5,0.5));
-        cubeCorners[p2c[c]] = float4(p,p.y);
+        cubeCorners[p2c[c]] = float4(p,eval(p));
     }
     int cubeIndex = 0;
     if (cubeCorners[0].w > isoLevel) cubeIndex |= 1;
@@ -79,6 +80,7 @@ void genMesh(float3 center, float size, int to){
         t++;
     }
     meshmem[to].tcount = t;
+    return;
 }
 
 [numthreads(256,1,1)]
@@ -87,7 +89,7 @@ void TreeUpdate (uint3 id : SV_DispatchThreadID){
         TreeNode nd = treemem[id.x];
         if(nd.state==1 && nd.level>0){
             float dist = boxSDF(camPos.xyz,nd.center,nd.size);
-            if(dist<10*nd.size){
+            if(dist<5*nd.size){
                 int st = treememFree.Consume();
                 for(int i=0; i<8; i++){
                     treemem[st+i].level = nd.level-1;
@@ -96,6 +98,7 @@ void TreeUpdate (uint3 id : SV_DispatchThreadID){
                     treemem[st+i].center = nd.center+offset*nd.size/2;
                     treemem[st+i].size = nd.size/2;
                     treemem[st+i].meshind=-1;
+                    treemem[st+i].state = 1;
                 }
                 treemem[id.x].chldst = st;
                 treemem[id.x].state = 2;
@@ -145,22 +148,49 @@ float distLine(float3 st, float3 d, float3 p){
     return length(p-d*dot(d,p));
 }
 
-float4 render(float3 pos, float3 dir, int node){
-    TreeNode tnd = treemem[node];
-    MeshNode nd = meshmem[tnd.meshind];
-    float dist = 10000;
-    for(int t=0; t<nd.tcount; t++){
-        //float3 outX;
-        //float3 outN;
-        //if(IntersectTriangle(pos,dir,nd.tris[t],outX,outN)){
-        //    return float4(1,0,1,0)*max(0.1,dot(outN,float3(0,1,0)));
-        //}
-
-        dist=min(dist,distLine(pos,dir,nd.tris[t][0]));
-        dist=min(dist,distLine(pos,dir,nd.tris[t][1]));
-        dist=min(dist,distLine(pos,dir,nd.tris[t][2]));
+bool raycast(float3 pos, float3 dir, int node, inout float3 hit, inout float3 norm, inout int newNode){
+    int iter = 0;
+    while(node != -1 && iter<200){
+        for(int t=0; t<meshmem[treemem[node].meshind].tcount; t++){
+            if(IntersectTriangle(pos,dir,meshmem[treemem[node].meshind].tris[t],hit,norm)){
+                return true;
+            }
+        }
+        float3 rto = (pos-treemem[node].center)/treemem[node].size;
+        float3 to2 = max((float3(0.5,0.5,0.5)-rto)/dir,(-float3(0.5,0.5,0.5)-rto)/dir);
+        float3 boxhit = rto+min(to2.x,min(to2.y,to2.z))*dir;
+        float3 gboxhit = treemem[node].center+treemem[node].size*boxhit;
+        pos = gboxhit;
+        newNode = node;
+        int a;
+        if(abs(boxhit.x+0.5)<0.00001) a=0;
+        if(abs(boxhit.x-0.5)<0.00001) a=1;
+        if(abs(boxhit.y+0.5)<0.00001) a=2;
+        if(abs(boxhit.y-0.5)<0.00001) a=3;
+        if(abs(boxhit.z+0.5)<0.00001) a=4;
+        if(abs(boxhit.z-0.5)<0.00001) a=5;
+        node = treemem[node].adj[a];
+        iter++;
     }
-    return float4(1,0,1,0)/(1+dist);
+    return false;
+}
+
+static const float3 lightPos = float3(10000,10000,0);
+float4 render(float3 pos, float3 dir, int node){
+    float3 outX;
+    float3 outN;
+    int newNode;
+    float4 sun = float4(1,1,1,0)*pow(max(0,dot(dir,normalize(lightPos - pos))),32);
+    if(raycast(pos,dir,node,outX,outN,newNode)){
+        float3 lightDir = normalize(lightPos - outX);  
+        float3 viewDir = normalize(pos - outX);
+        float3 reflectDir = reflect(-lightDir, outN);
+        float dif = max(0.1,dot(outN,float3(0,1,0)));
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+        return float4(0,1,0,0)*(dif+spec);
+    }else{
+        return sun+float4(0,0,0.5,0);
+    }
 }
 
 [numthreads(16,16,1)]
@@ -175,6 +205,7 @@ void Render (uint3 id : SV_DispatchThreadID)
             if(rel.z>0) nextID|=4;
             initCellID = treemem[initCellID].chldst+nextID;
         }
+    if(id.x == 0 && id.y == 0) debug[0] = initCellID;
     // TODO: insert actual code here!
     float2 p = id.xy/float2(resSize);
     float4 top = camFrustum[0]*(1-p.x)+camFrustum[1]*p.x;
