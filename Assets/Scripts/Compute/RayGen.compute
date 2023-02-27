@@ -1,0 +1,187 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel TreeUpdate
+#pragma kernel TreeBind
+#pragma kernel Render
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+#include "/Includes/Density.compute"
+#include "Includes/MarchTables.compute"
+#include "Includes/Geometry.compute"
+RWTexture2D<float4> Result;
+int2 resSize;
+float4x4 camFrustum;
+float4 camPos;
+float4x4 camToWorld;
+
+struct TreeNode{
+    int state;
+    int level;
+    float3 center;
+    float size;
+    int meshind;
+    int chldst;
+    int adj[6];
+};
+
+struct MeshNode{
+    float3x3 tris[5];
+    int tcount;
+};
+
+RWStructuredBuffer<TreeNode> treemem;
+RWStructuredBuffer<MeshNode> meshmem;
+ConsumeStructuredBuffer<int> treememFree;
+ConsumeStructuredBuffer<int> meshmemFree;
+
+float boxSDF(float3 p, float3 center, float size){
+  float3 q = abs(p-center) - float3(size,size,size);
+  return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
+}
+
+float isoLevel;
+float3 interpolateVerts(float4 v1, float4 v2) {
+    float t = (isoLevel - v1.w) / (v2.w - v1.w);
+    return v1.xyz + 0.5 * (v2.xyz-v1.xyz);
+}
+
+int p2c[8] = {0,1,4,5,3,2,7,6};
+void genMesh(float3 center, float size, int to){
+    float4 cubeCorners[8];
+    for(int c=0; c<8; c++){
+        float3 ps = float3(c%2,(c/2)%2,(c/4)%2);
+        float3 p = center+size*(ps-float3(0.5,0.5,0.5));
+        cubeCorners[p2c[c]] = float4(p,p.y);
+    }
+    int cubeIndex = 0;
+    if (cubeCorners[0].w > isoLevel) cubeIndex |= 1;
+    if (cubeCorners[1].w > isoLevel) cubeIndex |= 2;
+    if (cubeCorners[2].w > isoLevel) cubeIndex |= 4;
+    if (cubeCorners[3].w > isoLevel) cubeIndex |= 8;
+    if (cubeCorners[4].w > isoLevel) cubeIndex |= 16;
+    if (cubeCorners[5].w > isoLevel) cubeIndex |= 32;
+    if (cubeCorners[6].w > isoLevel) cubeIndex |= 64;
+    if (cubeCorners[7].w > isoLevel) cubeIndex |= 128;
+    int t = 0;
+    for (int i = 0; triangulation[cubeIndex][i] != -1; i +=3) {
+        int a0 = cornerIndexAFromEdge[triangulation[cubeIndex][i]];
+        int b0 = cornerIndexBFromEdge[triangulation[cubeIndex][i]];
+
+        int a1 = cornerIndexAFromEdge[triangulation[cubeIndex][i+1]];
+        int b1 = cornerIndexBFromEdge[triangulation[cubeIndex][i+1]];
+
+        int a2 = cornerIndexAFromEdge[triangulation[cubeIndex][i+2]];
+        int b2 = cornerIndexBFromEdge[triangulation[cubeIndex][i+2]];
+
+        meshmem[to].tris[t][0] = interpolateVerts(cubeCorners[a0], cubeCorners[b0]);
+        meshmem[to].tris[t][1] = interpolateVerts(cubeCorners[a1], cubeCorners[b1]);
+        meshmem[to].tris[t][2] = interpolateVerts(cubeCorners[a2], cubeCorners[b2]);
+        t++;
+    }
+    meshmem[to].tcount = t;
+}
+
+[numthreads(256,1,1)]
+void TreeUpdate (uint3 id : SV_DispatchThreadID){
+    if(treemem[id.x].state!=0){
+        TreeNode nd = treemem[id.x];
+        if(nd.state==1 && nd.level>0){
+            float dist = boxSDF(camPos.xyz,nd.center,nd.size);
+            if(dist<10*nd.size){
+                int st = treememFree.Consume();
+                for(int i=0; i<8; i++){
+                    treemem[st+i].level = nd.level-1;
+                    float3 offset = float3((i)&1,(i>>1)&1,(i>>2)&1);
+                    offset = offset-float3(0.5,0.5,0.5);
+                    treemem[st+i].center = nd.center+offset*nd.size/2;
+                    treemem[st+i].size = nd.size/2;
+                    treemem[st+i].meshind=-1;
+                }
+                treemem[id.x].chldst = st;
+                treemem[id.x].state = 2;
+            }
+        }
+        nd = treemem[id.x];
+        if(nd.state==1 && nd.meshind==-1){
+            int to = meshmemFree.Consume();
+            treemem[id.x].meshind = to;
+            genMesh(nd.center,nd.size,to);
+        }
+    }
+}
+static const int k0[6] = {0,1,0,2,0,4};
+static const int k1[6] = {1,1,2,2,4,4};
+int lvlProcess;
+[numthreads(256,1,1)]
+void TreeBind (uint3 id : SV_DispatchThreadID){
+    if(treemem[id.x].state!=0){
+        TreeNode nd = treemem[id.x];
+        if(nd.state == 2 && nd.level == lvlProcess){
+            for(int d=0; d<6; d++){
+                for(int c=0; c<8; c++){
+                    int to = c^k1[d];
+                    int res;
+                    if(((c^k0[d])&k1[d]) == k1[d]){
+                        res=nd.chldst+to;
+                    }else{
+                        if(nd.adj[d]==-1){
+                            res=-1;
+                        }else if(treemem[nd.adj[d]].state==1){
+                            res=nd.adj[d];
+                        }else{
+                            res=treemem[nd.adj[d]].chldst+to;
+                        }
+                    }
+                    treemem[nd.chldst+c].adj[d] = res;
+                }
+            }
+        }
+    }
+}
+
+float distLine(float3 st, float3 d, float3 p){
+    p-=st;
+    if(dot(d,p)<0) return 10000000;
+    return length(p-d*dot(d,p));
+}
+
+float4 render(float3 pos, float3 dir, int node){
+    TreeNode tnd = treemem[node];
+    MeshNode nd = meshmem[tnd.meshind];
+    float dist = 10000;
+    for(int t=0; t<nd.tcount; t++){
+        //float3 outX;
+        //float3 outN;
+        //if(IntersectTriangle(pos,dir,nd.tris[t],outX,outN)){
+        //    return float4(1,0,1,0)*max(0.1,dot(outN,float3(0,1,0)));
+        //}
+
+        dist=min(dist,distLine(pos,dir,nd.tris[t][0]));
+        dist=min(dist,distLine(pos,dir,nd.tris[t][1]));
+        dist=min(dist,distLine(pos,dir,nd.tris[t][2]));
+    }
+    return float4(1,0,1,0)/(1+dist);
+}
+
+[numthreads(16,16,1)]
+void Render (uint3 id : SV_DispatchThreadID)
+{
+    int initCellID = 0;
+        while(treemem[initCellID].state==2){
+            float3 rel = (camPos.xyz-treemem[initCellID].center)/treemem[initCellID].size;
+            int nextID = 0;
+            if(rel.x>0) nextID|=1;
+            if(rel.y>0) nextID|=2;
+            if(rel.z>0) nextID|=4;
+            initCellID = treemem[initCellID].chldst+nextID;
+        }
+    // TODO: insert actual code here!
+    float2 p = id.xy/float2(resSize);
+    float4 top = camFrustum[0]*(1-p.x)+camFrustum[1]*p.x;
+    float4 bottom = camFrustum[3]*(1-p.x)+camFrustum[2]*p.x;
+    float4 camRay = top*p.y+bottom*(1-p.y);
+    float4 worldRay = mul(camToWorld,camRay);
+    float3 ray = normalize(worldRay.xyz);
+    float3 orig = camPos.xyz;
+    Result[id.xy] = render(orig,ray,initCellID);
+}

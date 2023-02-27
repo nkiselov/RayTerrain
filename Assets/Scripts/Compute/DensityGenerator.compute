@@ -1,0 +1,25 @@
+﻿#include "/Includes/Density.compute"
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Voxel
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+static const int numThreads = 8;
+
+RWStructuredBuffer<float> points;
+int numPointsPerAxis;
+float3 offset;
+float scale;
+
+int indexFromCoord(int x, int y, int z) {
+    return z * numPointsPerAxis * numPointsPerAxis + y * numPointsPerAxis + x;
+}
+
+[numthreads(numThreads,numThreads,numThreads)]
+void Voxel (int3 id : SV_DispatchThreadID)
+{
+    if(id.x < numPointsPerAxis && id.y < numPointsPerAxis && id.z < numPointsPerAxis){
+        float3 pos = (float3(id)/(numPointsPerAxis-1)-float3(0.5,0.5,0.5))*scale+offset;
+        points[indexFromCoord(id.x,id.y,id.z)]=eval(pos);
+     }
+}

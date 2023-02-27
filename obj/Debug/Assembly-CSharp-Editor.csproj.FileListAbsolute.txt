@@ -1,0 +1,2 @@
+/Users/nikita/Documents/Achool2022-23/RayTerrain/obj/Debug/Assembly-CSharp-Editor.csproj.AssemblyReference.cache
+/Users/nikita/Documents/Achool2022-23/RayTerrain/obj/Debug/Assembly-CSharp-Editor.csproj.CoreCompileInputs.cache
