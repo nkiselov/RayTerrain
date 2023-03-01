@@ -39,7 +39,7 @@ public class Blit : MonoBehaviour
         kernelHandle[2] = shader.FindKernel("TreeBind");
         kernelHandle[3] = shader.FindKernel("Render");
 
-        treeMem = new ComputeBuffer(treeSizeLim, sizeof(int) * 11 + sizeof(float) * 4);
+        treeMem = new ComputeBuffer(treeSizeLim, sizeof(int) * 10 + sizeof(float) * 4);
         meshMem = new ComputeBuffer(meshSizeLim, sizeof(float) * 9 * 5 * 2 + sizeof(int));
         treeMemFree = new ComputeBuffer(treeSizeLim, sizeof(int), ComputeBufferType.Append);
         meshMemFree = new ComputeBuffer(meshSizeLim, sizeof(int), ComputeBufferType.Append);
@@ -167,7 +167,6 @@ public class Blit : MonoBehaviour
     {
         int state;
         int level;
-        int parent;
         float centerX;
         float centerY;
         float centerZ;
@@ -180,7 +179,6 @@ public class Blit : MonoBehaviour
         {
             this.state = state;
             this.level = level;
-            this.parent = -1;
             this.centerX = centerX;
             this.centerY = centerY;
             this.centerZ = centerZ;

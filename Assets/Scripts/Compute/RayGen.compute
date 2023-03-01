@@ -18,7 +18,6 @@ float4x4 camToWorld;
 struct TreeNode{
     int state;
     int level;
-    int parent;
     float3 center;
     float size;
     int meshind;
@@ -107,7 +106,6 @@ void TreeUpdate (uint3 id : SV_DispatchThreadID){
                 if(nd.state==1){
                     int st = treememFree.Consume();
                     for(int i=0; i<8; i++){
-                        treemem[st+i].parent = id.x;
                         treemem[st+i].level = nd.level-1;
                         float3 offset = float3((i)&1,(i>>1)&1,(i>>2)&1);
                         offset = offset-float3(0.5,0.5,0.5);
@@ -205,24 +203,6 @@ bool raycast(float3 pos, float3 dir, int node, inout float3 hit, inout float3 no
                     ret=true;
                 }
             }
-        }
-        if(ret){
-            nohit=0;
-            if(treemem[node].state==2){
-                float3 rel = (pos-treemem[node].center)/treemem[node].size;
-                int nextID = 0;
-                if(rel.x>0) nextID|=1;
-                if(rel.y>0) nextID|=2;
-                if(rel.z>0) nextID|=4;
-                node = treemem[node].chldst+nextID;
-                continue;
-            }
-            return true;
-        }
-        nohit++;
-        if(nohit>=5 && treemem[node].parent!=-1){
-            node = treemem[node].parent;
-            continue;
         }
         float3 rto = (pos-treemem[node].center)/treemem[node].size;
         float3 to2 = max((float3(0.5,0.5,0.5)-rto)/dir,(-float3(0.5,0.5,0.5)-rto)/dir);
