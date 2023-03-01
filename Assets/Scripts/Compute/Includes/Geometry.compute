@@ -1,0 +1,50 @@
+float PointInOrOn( float3 P1, float3 P2, float3 A, float3 B )
+{
+    float3 CP1 = cross(B - A, P1 - A);
+    float3 CP2 = cross(B - A, P2 - A);
+    return step(0.0, dot(CP1, CP2));
+}
+
+bool PointInTriangle( float3 px, float3x3 tri )
+{
+    return 
+        PointInOrOn(px, tri[0], tri[1], tri[2]) *
+        PointInOrOn(px, tri[1], tri[2], tri[0]) *
+        PointInOrOn(px, tri[2], tri[0], tri[1]);
+}
+
+void IntersectPlane(float3 orig, float3 dir, float3x3 tri, inout float3 outX, inout float3 outN)
+{
+    float3 N = normalize(cross(tri[1]-tri[0], tri[2]-tri[0]));
+    outX = orig + dir * dot(tri[0] - orig, N) / dot(dir, N);
+    if(dot(N,dir)>0){
+        outN = -N;
+    }else{
+        outN = N;
+    }
+}
+
+bool IntersectTriangle(float3 orig, float3 dir, float3x3 tri, inout float3 outX, inout float3 outN)
+{
+    IntersectPlane(orig,dir,tri,outX,outN);
+    float3 X = outX;
+    return PointInTriangle(X, tri) && dot(X-orig,dir)>0;
+}
+
+float3x3 inv(float3x3 A){
+    float3x3 result;
+    float determinant =    +A[0][0]*(A[1][1]*A[2][2]-A[2][1]*A[1][2])
+                        -A[0][1]*(A[1][0]*A[2][2]-A[1][2]*A[2][0])
+                        +A[0][2]*(A[1][0]*A[2][1]-A[1][1]*A[2][0]);
+    float invdet = 1/determinant;
+    result[0][0] =  (A[1][1]*A[2][2]-A[2][1]*A[1][2])*invdet;
+    result[1][0] = -(A[0][1]*A[2][2]-A[0][2]*A[2][1])*invdet;
+    result[2][0] =  (A[0][1]*A[1][2]-A[0][2]*A[1][1])*invdet;
+    result[0][1] = -(A[1][0]*A[2][2]-A[1][2]*A[2][0])*invdet;
+    result[1][1] =  (A[0][0]*A[2][2]-A[0][2]*A[2][0])*invdet;
+    result[2][1] = -(A[0][0]*A[1][2]-A[1][0]*A[0][2])*invdet;
+    result[0][2] =  (A[1][0]*A[2][1]-A[2][0]*A[1][1])*invdet;
+    result[1][2] = -(A[0][0]*A[2][1]-A[2][0]*A[0][1])*invdet;
+    result[2][2] =  (A[0][0]*A[1][1]-A[1][0]*A[0][1])*invdet;
+    return result;
+}

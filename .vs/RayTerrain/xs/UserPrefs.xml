@@ -1,0 +1,25 @@
+﻿<Properties StartupConfiguration="{4182D2A7-9ECA-3944-1931-865949CA5306}|">
+  <MonoDevelop.Ide.Workbench ActiveDocument="Assets/Scripts/Compute/RayGen.compute">
+    <Files>
+      <File FileName="Assets/Scripts/Settings/Mesh_TerrainSettings.cs" Line="1" Column="1" />
+      <File FileName="Assets/Scripts/Blit.cs" />
+      <File FileName="Assets/Scripts/Compute/RayGen.compute" Line="291" Column="2" />
+      <File FileName="Assets/Scripts/Compute/DensityGenerator.compute" />
+      <File FileName="Assets/Scripts/Compute/Includes/Density.compute" />
+      <File FileName="Assets/Scripts/Compute/Includes/Noise.compute" />
+      <File FileName="Assets/Scripts/VoxelGenerator.cs" />
+      <File FileName="Assets/Scripts/Settings/LOD_TerrainSettings.cs" />
+      <File FileName="Assets/Scripts/Chunk.cs" />
+      <File FileName="Assets/Scripts/Compute/Includes/Geometry.compute" />
+      <File FileName="Assets/Scripts/Compute/Includes/MarchTables.compute" />
+    </Files>
+  </MonoDevelop.Ide.Workbench>
+  <MonoDevelop.Ide.ItemProperties.Assembly-CSharp-Editor PreferredExecutionTarget="56134537-30b2-4cc0-afd4-081d7bcbfd60" />
+  <MonoDevelop.Ide.DebuggingService.PinnedWatches />
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" />
+  <MonoDevelop.Ide.ItemProperties.Assembly-CSharp PreferredExecutionTarget="29e410ab-ec58-4fb9-9c1f-e8ffc9eb0011" />
+  <MonoDevelop.Ide.DebuggingService.Breakpoints>
+    <BreakpointStore />
+  </MonoDevelop.Ide.DebuggingService.Breakpoints>
+  <MultiItemStartupConfigurations />
+</Properties>

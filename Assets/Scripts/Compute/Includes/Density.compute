@@ -1,0 +1,37 @@
+
+#include "/Includes/Noise.compute"
+float baseAmplitude;
+float baseFrequency;
+int octaves;
+RWStructuredBuffer<float3> octaveOffsets;
+float persistance;
+float lacunarity;
+float weightMultiplier;
+float hardFloor;
+float hardFloorWeight;
+
+float eval(float3 pos){
+    float amplitude = baseAmplitude;
+    float frequency = baseFrequency;
+    float weight = 1;
+    float noiseValue = 0;
+    for (int i = 0; i<octaves; i++)
+    {
+        float sampleX = (pos.x + octaveOffsets[i].x)  * frequency;
+        float sampleY = (pos.y + octaveOffsets[i].y)  * frequency;
+        float sampleZ = (pos.z + octaveOffsets[i].z)  * frequency;
+        float3 ws = float3(sampleX, sampleY, sampleZ);
+        float perlinValue = snoise(ws);
+        float v = 1-abs(perlinValue);
+        v = v*v*weight;
+        weight = max(min(v*weightMultiplier,1),0);
+        noiseValue += v * amplitude;
+        amplitude *= persistance;
+        frequency *= lacunarity;
+    }
+    float density = (-pos.y+noiseValue);
+    if (pos.y < hardFloor) {
+        density += hardFloorWeight;
+    }
+    return density;
+}

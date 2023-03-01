@@ -1,0 +1,291 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel TreeUpdate
+#pragma kernel MeshUpdate
+#pragma kernel TreeBind
+#pragma kernel Render
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+#include "/Includes/Density.compute"
+#include "Includes/MarchTables.compute"
+#include "Includes/Geometry.compute"
+RWTexture2D<float4> Result;
+int2 resSize;
+float4x4 camFrustum;
+float4 camPos;
+float4x4 camToWorld;
+
+struct TreeNode{
+    int state;
+    int level;
+    int parent;
+    float3 center;
+    float size;
+    int meshind;
+    int chldst;
+    int adj[6];
+};
+
+struct MeshNode{
+    float3x3 tris[5];
+    float3x3 trisInv[5];
+    int tcount;
+};
+
+RWStructuredBuffer<int> debug;
+RWStructuredBuffer<TreeNode> treemem;
+RWStructuredBuffer<MeshNode> meshmem;
+ConsumeStructuredBuffer<int> treememFree;
+ConsumeStructuredBuffer<int> meshmemFree;
+
+float boxSDF(float3 p, float3 center, float size){
+  float3 q = abs(p-center) - float3(size,size,size);
+  return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
+}
+
+float isoLevel;
+float3 interpolateVerts(float4 v1, float4 v2) {
+    float t = (isoLevel - v1.w) / (v2.w - v1.w);
+    return v1.xyz + t * (v2.xyz-v1.xyz);
+}
+
+static const int p2c[8] = {0,1,4,5,3,2,7,6};
+void genMesh(float3 center, float size, int to){
+    float4 cubeCorners[8];
+    for(int c=0; c<8; c++){
+        float3 ps = float3(c%2,(c/2)%2,(c/4)%2);
+        float3 p = center+size*(ps-float3(0.5,0.5,0.5));
+        cubeCorners[p2c[c]] = float4(p,eval(p));
+    }
+    int cubeIndex = 0;
+    if (cubeCorners[0].w > isoLevel) cubeIndex |= 1;
+    if (cubeCorners[1].w > isoLevel) cubeIndex |= 2;
+    if (cubeCorners[2].w > isoLevel) cubeIndex |= 4;
+    if (cubeCorners[3].w > isoLevel) cubeIndex |= 8;
+    if (cubeCorners[4].w > isoLevel) cubeIndex |= 16;
+    if (cubeCorners[5].w > isoLevel) cubeIndex |= 32;
+    if (cubeCorners[6].w > isoLevel) cubeIndex |= 64;
+    if (cubeCorners[7].w > isoLevel) cubeIndex |= 128;
+    int t = 0;
+    for (int i = 0; triangulation[cubeIndex][i] != -1; i +=3) {
+        int a0 = cornerIndexAFromEdge[triangulation[cubeIndex][i]];
+        int b0 = cornerIndexBFromEdge[triangulation[cubeIndex][i]];
+
+        int a1 = cornerIndexAFromEdge[triangulation[cubeIndex][i+1]];
+        int b1 = cornerIndexBFromEdge[triangulation[cubeIndex][i+1]];
+
+        int a2 = cornerIndexAFromEdge[triangulation[cubeIndex][i+2]];
+        int b2 = cornerIndexBFromEdge[triangulation[cubeIndex][i+2]];
+
+        float3 A = interpolateVerts(cubeCorners[a0], cubeCorners[b0]);
+        float3 B = interpolateVerts(cubeCorners[a1], cubeCorners[b1]);
+        float3 C = interpolateVerts(cubeCorners[a2], cubeCorners[b2]);
+
+        meshmem[to].tris[t][0] = A;
+        meshmem[to].tris[t][1] = B-A;
+        meshmem[to].tris[t][2] = C-A;
+
+        float3x3 frame;
+        frame[0] = B-A;
+        frame[1] = C-A;
+        frame[2] = normalize(cross(B-A,C-A));
+
+        meshmem[to].trisInv[t] = inv(frame);
+        t++;
+    }
+    meshmem[to].tcount = t;
+    return;
+}
+
+[numthreads(256,1,1)]
+void TreeUpdate (uint3 id : SV_DispatchThreadID){
+    if(treemem[id.x].state!=0){
+        TreeNode nd = treemem[id.x];
+        if(nd.level>0){
+            float dist = boxSDF(camPos.xyz,nd.center,nd.size);
+            if(dist<5*nd.size){
+                if(nd.state==1){
+                    int st = treememFree.Consume();
+                    for(int i=0; i<8; i++){
+                        treemem[st+i].parent = id.x;
+                        treemem[st+i].level = nd.level-1;
+                        float3 offset = float3((i)&1,(i>>1)&1,(i>>2)&1);
+                        offset = offset-float3(0.5,0.5,0.5);
+                        treemem[st+i].center = nd.center+offset*nd.size/2;
+                        treemem[st+i].size = nd.size/2;
+                        treemem[st+i].meshind=-1;
+                        treemem[st+i].state = 1;
+                    }
+                    treemem[id.x].chldst = st;
+                    treemem[id.x].state = 2;
+                }
+            }else if(nd.state==2){
+                treemem[id.x].state = 1;
+            }
+        }
+    }
+}
+[numthreads(256,1,1)]
+void MeshUpdate (uint3 id : SV_DispatchThreadID){
+    if(treemem[id.x].state!=0){
+        TreeNode nd = treemem[id.x];
+        if(nd.meshind==-1){
+            int to = meshmemFree.Consume();
+            treemem[id.x].meshind = to;
+            genMesh(nd.center,nd.size,to);
+        }
+    }
+}
+
+
+static const int k0[6] = {0,1,0,2,0,4};
+static const int k1[6] = {1,1,2,2,4,4};
+int lvlProcess;
+[numthreads(256,1,1)]
+void TreeBind (uint3 id : SV_DispatchThreadID){
+    if(treemem[id.x].state!=0){
+        TreeNode nd = treemem[id.x];
+        if(nd.state == 2 && nd.level == lvlProcess){
+            for(int d=0; d<6; d++){
+                for(int c=0; c<8; c++){
+                    int to = c^k1[d];
+                    int res;
+                    if(((c^k0[d])&k1[d]) == k1[d]){
+                        res=nd.chldst+to;
+                    }else{
+                        if(nd.adj[d]==-1){
+                            res=-1;
+                        }else if(treemem[nd.adj[d]].state==1){
+                            res=nd.adj[d];
+                        }else{
+                            res=treemem[nd.adj[d]].chldst+to;
+                        }
+                    }
+                    treemem[nd.chldst+c].adj[d] = res;
+                }
+            }
+        }
+    }
+}
+
+float distLine(float3 st, float3 d, float3 p){
+    p-=st;
+    if(dot(d,p)<0) return 10000000;
+    return length(p-d*dot(d,p));
+}
+
+bool IntersectTriangle2(float3 pos, float3 dir, float3x3 tri, float3x3 invtri, inout float3 outX, inout float3 outN){
+    float3 rpos = mul(invtri,pos-tri[0]);
+    float3 rdir = mul(invtri,dir);
+    float k = -rpos.z/rdir.z;
+    if(k<0) return false;
+    rpos+=rdir*k;
+    if(rpos.x<0 || rpos.x>1) return false;
+    if(rpos.y<0 || rpos.y>1) return false;
+    if(rpos.x+rpos.y>1) return false;
+    outX = tri[0]+tri[1]*rpos.x+tri[2]*rpos.y;
+    outN = normalize(cross(tri[1],tri[2]));
+    return true;
+}
+
+bool raycast(float3 pos, float3 dir, int node, inout float3 hit, inout float3 norm, inout int newNode){
+    int iter = 0;
+    int nohit = 0;
+    while(node != -1 && iter<200){
+        hit=pos+float3(0,100000,0);
+        norm=float3(0,0,0);
+        float3 tmphit = float3(0,0,0);
+        float3 tmpnorm = float3(0,0,0);
+        bool ret = false;
+        for(int t=0; t<meshmem[treemem[node].meshind].tcount; t++){
+            if(IntersectTriangle2(pos,dir,meshmem[treemem[node].meshind].tris[t],meshmem[treemem[node].meshind].trisInv[t],tmphit,tmpnorm)){
+                if(length(tmphit-pos)<length(hit-pos)){
+                    hit = tmphit;
+                    norm = tmpnorm;
+                    ret=true;
+                }
+            }
+        }
+        if(ret){
+            nohit=0;
+            if(treemem[node].state==2){
+                float3 rel = (pos-treemem[node].center)/treemem[node].size;
+                int nextID = 0;
+                if(rel.x>0) nextID|=1;
+                if(rel.y>0) nextID|=2;
+                if(rel.z>0) nextID|=4;
+                node = treemem[node].chldst+nextID;
+                continue;
+            }
+            return true;
+        }
+        nohit++;
+        if(nohit>=5 && treemem[node].parent!=-1){
+            node = treemem[node].parent;
+            continue;
+        }
+        float3 rto = (pos-treemem[node].center)/treemem[node].size;
+        float3 to2 = max((float3(0.5,0.5,0.5)-rto)/dir,(-float3(0.5,0.5,0.5)-rto)/dir);
+        float3 boxhit = rto+min(to2.x,min(to2.y,to2.z))*dir;
+        float3 gboxhit = treemem[node].center+treemem[node].size*boxhit;
+        pos = gboxhit;
+        newNode = node;
+        int a;
+        float mx = max(abs(boxhit.x),max(abs(boxhit.y),abs(boxhit.z)));
+        if(mx==abs(boxhit.x)){
+            if(boxhit.x<0) a=0;
+            else a=1;
+        }else if(mx==abs(boxhit.y)){
+            if(boxhit.y<0) a=2;
+            else a=3;
+        }else{
+            if(boxhit.z<0) a=4;
+            else a=5;
+        }
+        node = treemem[node].adj[a];
+        iter++;
+    }
+    return false;
+}
+
+static const float3 lightPos = float3(10000,10000,0);
+float4 render(float3 pos, float3 dir, int node){
+    float3 outX;
+    float3 outN;
+    int newNode;
+    float4 sun = float4(1,1,1,0)*pow(max(0,dot(dir,normalize(lightPos - pos))),32);
+    if(raycast(pos,dir,node,outX,outN,newNode)){
+        float3 lightDir = normalize(lightPos - outX);  
+        float3 viewDir = normalize(pos - outX);
+        float3 reflectDir = reflect(-lightDir, outN);
+        float dif = max(0.1,dot(outN,float3(0,1,0)));
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+        return float4(0,1,0,0)*(dif+spec);
+    }else{
+        return sun+float4(0,0,0.5,0);
+    }
+}
+
+[numthreads(16,16,1)]
+void Render (uint3 id : SV_DispatchThreadID)
+{
+    int initCellID = 0;
+        while(treemem[initCellID].state==2){
+            float3 rel = (camPos.xyz-treemem[initCellID].center)/treemem[initCellID].size;
+            int nextID = 0;
+            if(rel.x>0) nextID|=1;
+            if(rel.y>0) nextID|=2;
+            if(rel.z>0) nextID|=4;
+            initCellID = treemem[initCellID].chldst+nextID;
+        }
+    if(id.x == 0 && id.y == 0) debug[0] = initCellID;
+    // TODO: insert actual code here!
+    float2 p = id.xy/float2(resSize);
+    float4 top = camFrustum[0]*(1-p.x)+camFrustum[1]*p.x;
+    float4 bottom = camFrustum[3]*(1-p.x)+camFrustum[2]*p.x;
+    float4 camRay = top*p.y+bottom*(1-p.y);
+    float4 worldRay = mul(camToWorld,camRay);
+    float3 ray = normalize(worldRay.xyz);
+    float3 orig = camPos.xyz;
+    Result[id.xy] = render(orig,ray,initCellID);
+}
