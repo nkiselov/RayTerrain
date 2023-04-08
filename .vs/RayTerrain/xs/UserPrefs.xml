@@ -1,25 +1,19 @@
 ﻿<Properties StartupConfiguration="{4182D2A7-9ECA-3944-1931-865949CA5306}|">
   <MonoDevelop.Ide.Workbench ActiveDocument="Assets/Scripts/Compute/RayGen.compute">
     <Files>
-      <File FileName="Assets/Scripts/Settings/Mesh_TerrainSettings.cs" Line="1" Column="1" />
-      <File FileName="Assets/Scripts/Blit.cs" />
-      <File FileName="Assets/Scripts/Compute/RayGen.compute" Line="291" Column="2" />
-      <File FileName="Assets/Scripts/Compute/DensityGenerator.compute" />
-      <File FileName="Assets/Scripts/Compute/Includes/Density.compute" />
-      <File FileName="Assets/Scripts/Compute/Includes/Noise.compute" />
-      <File FileName="Assets/Scripts/VoxelGenerator.cs" />
-      <File FileName="Assets/Scripts/Settings/LOD_TerrainSettings.cs" />
-      <File FileName="Assets/Scripts/Chunk.cs" />
-      <File FileName="Assets/Scripts/Compute/Includes/Geometry.compute" />
-      <File FileName="Assets/Scripts/Compute/Includes/MarchTables.compute" />
+      <File FileName="Assets/Scripts/Blit.cs" Line="15" Column="23" IsPinned="True" />
+      <File FileName="Assets/Scripts/Compute/RayGen.compute" Line="196" Column="22" />
+      <File FileName="Assets/Scripts/Compute/Includes/Shading.compute" />
     </Files>
   </MonoDevelop.Ide.Workbench>
   <MonoDevelop.Ide.ItemProperties.Assembly-CSharp-Editor PreferredExecutionTarget="56134537-30b2-4cc0-afd4-081d7bcbfd60" />
   <MonoDevelop.Ide.DebuggingService.PinnedWatches />
   <MonoDevelop.Ide.Workspace ActiveConfiguration="Debug" />
-  <MonoDevelop.Ide.ItemProperties.Assembly-CSharp PreferredExecutionTarget="29e410ab-ec58-4fb9-9c1f-e8ffc9eb0011" />
+  <MonoDevelop.Ide.ItemProperties.Assembly-CSharp PreferredExecutionTarget="2fcf65b1-955d-4d17-836a-d3e486fd7bb6" />
   <MonoDevelop.Ide.DebuggingService.Breakpoints>
-    <BreakpointStore />
+    <BreakpointStore>
+      <Breakpoint file="/Users/nikita/Documents/RayTerrain/Assets/Scripts/Compute/Includes/glt2qvr0.s0b~" relfile="Assets/Scripts/Compute/Includes/glt2qvr0.s0b~" line="51" column="1" />
+    </BreakpointStore>
   </MonoDevelop.Ide.DebuggingService.Breakpoints>
   <MultiItemStartupConfigurations />
 </Properties>

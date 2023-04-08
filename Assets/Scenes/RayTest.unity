@@ -222,8 +222,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   shader: {fileID: 7200000, guid: 78bedb0a671e04414afa9ea9f2fc4eb0, type: 3}
   mesh_set: {fileID: 11400000, guid: 7fe016d8f7a0b4a8ebc301cf6f3c830e, type: 2}
-  treeSizeLim: 500000
-  meshSizeLim: 500000
+  SkyboxTexture: {fileID: 2800000, guid: 3b5d67736d7b8ad4f8da4d58eaef0b98, type: 3}
+  GroundTexture: {fileID: 2800000, guid: 6a5eebe602d9440aeb0d1d3792103595, type: 3}
+  treeSizeLim: 5000000
+  meshSizeLim: 5000000
 --- !u!114 &462317101
 MonoBehaviour:
   m_ObjectHideFlags: 0

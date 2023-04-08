@@ -1,14 +1,105 @@
 // Each #kernel tells which function to compile; you can have many kernels
+
 #pragma kernel TreeUpdate
 #pragma kernel MeshUpdate
 #pragma kernel TreeBind
 #pragma kernel Render
 
 // Create a RenderTexture with enableRandomWrite flag and set it
-// with cs.SetTexture
+// with cs.SetTexturex
+
+struct RayHit
+{
+    float3 position;
+    float distance;
+    float3 normal;
+};
+
+struct Ray
+{
+    int node;
+    float3 origin;
+    float3 direction;
+    float energy;
+};
+
+RayHit CreateRayHit()
+{
+    RayHit hit;
+    hit.position = float3(0.0f, 0.0f, 0.0f);
+    hit.distance = 1.#INF;
+    hit.normal = float3(0.0f, 0.0f, 0.0f);
+    return hit;
+}
+
+RayHit Trace(Ray ray);
+static const int specularHardness = 32;
+#include "/Includes/Shading.compute"
+
+//static const float3 skyTop = float3(116, 145, 232)/255.0f;
+//static const float3 skyBottom = float3(204, 224, 237)/255.0f;
+static const float PI = 3.14159265f;
+Texture2D<float4> _SkyboxTexture;
+SamplerState sampler_SkyboxTexture;
+Texture2D<float4> _GroundTexture;
+SamplerState sampler_GroundTexture;
+static const float groundTextureSize = 500;
+
+float3 sampleGround(float2 coord){
+    coord/=groundTextureSize;
+    coord-=floor(coord);
+    return _GroundTexture.SampleLevel(sampler_GroundTexture, coord, 0).xyz;
+}
+
+float3 Shade(inout Ray ray, RayHit hit)
+{
+    PointLight globalLight = makePointLight(
+        float3(1000,1000,0),
+        float3(1,1,1),
+        float3(1,1,1)
+    );
+    if (hit.distance < 1.#INF)
+    {
+        Lighting lig = GetPointLight(globalLight,hit.position,ray.direction,hit.normal);
+
+        // Reflect the ray and multiply energy with specular reflection
+        ray.origin = hit.position + hit.normal;
+        ray.direction = ray.direction-2*hit.normal*dot(ray.direction,hit.normal);
+        ray.energy *= 0.4;
+        float3 albedo = float3(0,0,0);
+        albedo+=sampleGround(hit.position.yz)*abs(hit.normal.x);
+        albedo+=sampleGround(hit.position.xz)*abs(hit.normal.y);
+        albedo+=sampleGround(hit.position.xy)*abs(hit.normal.z);
+        return lig.Diffuse*albedo+lig.Specular;
+    }
+    else
+    {
+        // Erase the ray's energy - the sky doesn't reflect anything
+        ray.energy = 0.0f;
+
+        // Sample the skybox and write it
+        float theta = acos(ray.direction.y) / -PI;
+        float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
+        return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
+    }
+}
+
+float3 Render(Ray ray){
+    float3 result = float3(0, 0, 0);
+    for (int i = 0; i < 1; i++)
+    {
+        RayHit hit = Trace(ray);
+        result += ray.energy * Shade(ray, hit);
+    
+        if (ray.energy == 0.0f) break;
+    }
+    return result;
+}
+
 #include "/Includes/Density.compute"
 #include "Includes/MarchTables.compute"
 #include "Includes/Geometry.compute"
+
 RWTexture2D<float4> Result;
 int2 resSize;
 float4x4 camFrustum;
@@ -102,7 +193,7 @@ void TreeUpdate (uint3 id : SV_DispatchThreadID){
         TreeNode nd = treemem[id.x];
         if(nd.level>0){
             float dist = boxSDF(camPos.xyz,nd.center,nd.size);
-            if(dist<5*nd.size){
+            if(dist<20*nd.size){
                 if(nd.state==1){
                     int st = treememFree.Consume();
                     for(int i=0; i<8; i++){
@@ -178,38 +269,42 @@ bool IntersectTriangle2(float3 pos, float3 dir, float3x3 tri, float3x3 invtri, i
     float k = -rpos.z/rdir.z;
     if(k<0) return false;
     rpos+=rdir*k;
-    if(rpos.x<0 || rpos.x>1) return false;
-    if(rpos.y<0 || rpos.y>1) return false;
-    if(rpos.x+rpos.y>1) return false;
+    if(rpos.x<0 || rpos.x>1 || rpos.y<0 || rpos.y>1 || rpos.x+rpos.y>1){
+        return false;
+    }
     outX = tri[0]+tri[1]*rpos.x+tri[2]*rpos.y;
     outN = normalize(cross(tri[1],tri[2]));
     return true;
 }
 
-bool raycast(float3 pos, float3 dir, int node, inout float3 hit, inout float3 norm, inout int newNode){
+RayHit Trace(Ray ray){
     int iter = 0;
-    int nohit = 0;
-    while(node != -1 && iter<200){
-        hit=pos+float3(0,100000,0);
-        norm=float3(0,0,0);
-        float3 tmphit = float3(0,0,0);
-        float3 tmpnorm = float3(0,0,0);
+    RayHit hit = CreateRayHit();
+    float3 pos = ray.origin;
+    float3 dir = ray.direction;
+    while(ray.node != -1 && iter<200){
+        int node = ray.node;
+        float3 tmpPos = float3(0,0,0);
+        float3 tmpNorm = float3(0,0,0);
         bool ret = false;
         for(int t=0; t<meshmem[treemem[node].meshind].tcount; t++){
-            if(IntersectTriangle2(pos,dir,meshmem[treemem[node].meshind].tris[t],meshmem[treemem[node].meshind].trisInv[t],tmphit,tmpnorm)){
-                if(length(tmphit-pos)<length(hit-pos)){
-                    hit = tmphit;
-                    norm = tmpnorm;
+            if(IntersectTriangle2(pos,dir,meshmem[treemem[node].meshind].tris[t],meshmem[treemem[node].meshind].trisInv[t],tmpPos,tmpNorm)){
+                float newDist = length(tmpPos-pos);
+                if(newDist<hit.distance){
+                    hit.position = tmpPos;
+                    hit.normal = tmpNorm;
+                    hit.distance = newDist;
                     ret=true;
                 }
             }
         }
+
+        if(ret) break;
         float3 rto = (pos-treemem[node].center)/treemem[node].size;
         float3 to2 = max((float3(0.5,0.5,0.5)-rto)/dir,(-float3(0.5,0.5,0.5)-rto)/dir);
         float3 boxhit = rto+min(to2.x,min(to2.y,to2.z))*dir;
         float3 gboxhit = treemem[node].center+treemem[node].size*boxhit;
         pos = gboxhit;
-        newNode = node;
         int a;
         float mx = max(abs(boxhit.x),max(abs(boxhit.y),abs(boxhit.z)));
         if(mx==abs(boxhit.x)){
@@ -222,28 +317,10 @@ bool raycast(float3 pos, float3 dir, int node, inout float3 hit, inout float3 no
             if(boxhit.z<0) a=4;
             else a=5;
         }
-        node = treemem[node].adj[a];
+        ray.node = treemem[node].adj[a];
         iter++;
     }
-    return false;
-}
-
-static const float3 lightPos = float3(10000,10000,0);
-float4 render(float3 pos, float3 dir, int node){
-    float3 outX;
-    float3 outN;
-    int newNode;
-    float4 sun = float4(1,1,1,0)*pow(max(0,dot(dir,normalize(lightPos - pos))),32);
-    if(raycast(pos,dir,node,outX,outN,newNode)){
-        float3 lightDir = normalize(lightPos - outX);  
-        float3 viewDir = normalize(pos - outX);
-        float3 reflectDir = reflect(-lightDir, outN);
-        float dif = max(0.1,dot(outN,float3(0,1,0)));
-        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
-        return float4(0,1,0,0)*(dif+spec);
-    }else{
-        return sun+float4(0,0,0.5,0);
-    }
+    return hit;
 }
 
 [numthreads(16,16,1)]
@@ -265,7 +342,10 @@ void Render (uint3 id : SV_DispatchThreadID)
     float4 bottom = camFrustum[3]*(1-p.x)+camFrustum[2]*p.x;
     float4 camRay = top*p.y+bottom*(1-p.y);
     float4 worldRay = mul(camToWorld,camRay);
-    float3 ray = normalize(worldRay.xyz);
-    float3 orig = camPos.xyz;
-    Result[id.xy] = render(orig,ray,initCellID);
+    Ray ray;
+    ray.direction = normalize(worldRay.xyz);
+    ray.origin = camPos.xyz;
+    ray.node = initCellID;
+    ray.energy = 1;
+    Result[id.xy] = float4(Render(ray),1);
 }

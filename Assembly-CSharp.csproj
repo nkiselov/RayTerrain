@@ -74,6 +74,8 @@
     <None Include="Assets/Scripts/Compute/MarchingCubes.compute" />
     <None Include="Assets/Shaders/TerrainShader.shader" />
     <None Include="Assets/Scripts/Compute/RayGen.compute" />
+    <None Include="Assets/Scripts/Compute/Includes/Shading.compute" />
+    <None Include="Assets/SkySeries Freebie/Hdri setup.txt" />
     <None Include="Assets/Scripts/Compute/Includes/Density.compute" />
   </ItemGroup>
   <ItemGroup>

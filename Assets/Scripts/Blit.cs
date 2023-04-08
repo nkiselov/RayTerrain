@@ -8,9 +8,11 @@ public class Blit : MonoBehaviour
     public ComputeShader shader;
     private RenderTexture tex;
     public Mesh_TerrainSettings mesh_set;
+    public Texture2D SkyboxTexture;
+    public Texture2D GroundTexture;
     public int treeSizeLim;
     public int meshSizeLim;
-    const int lod = 14;
+    const int lod = 12;
     private ComputeBuffer debug;
     private ComputeBuffer treeMem;
     private ComputeBuffer meshMem;
@@ -68,6 +70,8 @@ public class Blit : MonoBehaviour
         shader.SetBuffer(kernelHandle[1], "debug", debug);
         shader.SetBuffer(kernelHandle[2], "debug", debug);
         shader.SetBuffer(kernelHandle[3], "debug", debug);
+        shader.SetTexture(kernelHandle[3], "_SkyboxTexture", SkyboxTexture);
+        shader.SetTexture(kernelHandle[3], "_GroundTexture", GroundTexture);
     }
 
     void OnRenderImage(RenderTexture src, RenderTexture dest)
